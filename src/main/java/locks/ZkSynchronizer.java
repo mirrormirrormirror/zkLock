@@ -184,7 +184,13 @@ public class ZkSynchronizer {
 
     protected void setOwnerLock(boolean isOwnerLock) {
         hasLock = isOwnerLock;
-        reenTranLockCount = reenTranLockCount + 1;
+        if (isOwnerLock) {
+            reenTranLockCount = reenTranLockCount + 1;
+        }else {
+            reenTranLockCount = reenTranLockCount - 1;
+        }
+
+
     }
 
 
