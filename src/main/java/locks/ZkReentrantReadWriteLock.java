@@ -299,10 +299,11 @@ public class ZkReentrantReadWriteLock {
             return false;
         }
 
-        public void release(int i) throws KeeperException, InterruptedException {
+            public void release(int i) throws KeeperException, InterruptedException {
             if (getReenTranLockCount() > 1) {
                 minuReenTranLock(i);
             } else {
+                setOwnerLock(false);
                 close();
             }
         }
