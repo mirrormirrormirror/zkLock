@@ -133,19 +133,26 @@ public class ZkSynchronizer {
         zk.close();
     }
 
-    protected void watchPreviousNode(String previousNodeName, long time, TimeUnit unit) throws KeeperException, InterruptedException {
+    protected void watchPreviousNode(String previousNodeName, long time, TimeUnit unit) {
         final CountDownLatch watchNodeSignal = new CountDownLatch(1);
 
-        zk.getData(nodePath(previousNodeName), new Watcher() {
-            @Override
-            public void process(WatchedEvent event) {
-                if (event.getType() == Event.EventType.NodeDeleted) {
-                    setOwnerLock(true);
-                    watchNodeSignal.countDown();
+        try {
+            zk.getData(nodePath(previousNodeName), new Watcher() {
+                @Override
+                public void process(WatchedEvent event) {
+                    if (event.getType() == Event.EventType.NodeDeleted) {
+                        setOwnerLock(true);
+                        watchNodeSignal.countDown();
+                    }
                 }
-            }
-        }, null);
-        watchNodeSignal.await(time, unit);
+            }, null);
+            watchNodeSignal.await(time, unit);
+        } catch (KeeperException ignored) {
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
 
     }
 
