@@ -155,7 +155,7 @@ public class ZkReentrantReadWriteLock {
 
             while (!isOwnerLock()) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName)) {
+                if (locks.get(0).equals(ownerLockName) && getReadLockCount() == 0) {
                     setOwnerLock(true);
                     break;
                 }
@@ -181,7 +181,7 @@ public class ZkReentrantReadWriteLock {
             final long deadline = System.nanoTime() + nanosTimeout;
             while (!isOwnerLock() && nanosTimeout > 0L) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName)) {
+                if (locks.get(0).equals(ownerLockName) && getReadLockCount() == 0) {
                     setOwnerLock(true);
                     return true;
                 }
@@ -207,7 +207,7 @@ public class ZkReentrantReadWriteLock {
             }
             ownerLockName = addChildren(writerNodePrefix());
             List<String> locks = getChildrenList();
-            if (locks.get(0).equals(ownerLockName)) {
+            if (locks.get(0).equals(ownerLockName) && getReadLockCount() == 0) {
                 setOwnerLock(true);
                 return true;
             }
@@ -215,7 +215,6 @@ public class ZkReentrantReadWriteLock {
         }
 
         public void readLock(int i) throws KeeperException, InterruptedException {
-            // 如果当前线程拥有锁，则重入
             if (isOwnerLock()) {
                 addReenTranLock(i);
                 return;
@@ -224,14 +223,12 @@ public class ZkReentrantReadWriteLock {
                 createNodeResource();
             }
             ownerLockName = addChildren(readerNodePrefix());
-
             while (!isOwnerLock()) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName)) {
+                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
                     setOwnerLock(true);
-                    break;
-                } else if (locks.get(0).contains(READ_LOCK_PREFIX)) {
-                    lockOwner(locks.get(0));
+                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
+                    setOwnerLock(true);
                 }
                 if (isOwnerLock()) {
                     break;
@@ -258,10 +255,10 @@ public class ZkReentrantReadWriteLock {
             final long deadline = System.nanoTime() + nanosTimeout;
             while (!isOwnerLock() && nanosTimeout > 0L) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName)) {
+                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
                     setOwnerLock(true);
-                } else if (locks.get(0).contains(READ_LOCK_PREFIX)) {
-                    lockOwner(locks.get(0));
+                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
+                    setOwnerLock(true);
                 }
                 if (isOwnerLock()) {
                     return true;
@@ -287,10 +284,10 @@ public class ZkReentrantReadWriteLock {
             }
             ownerLockName = addChildren(readerNodePrefix());
             List<String> locks = getChildrenList();
-            if (locks.get(0).equals(ownerLockName)) {
+            if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
                 setOwnerLock(true);
-            } else if (locks.get(0).contains(READ_LOCK_PREFIX)) {
-                lockOwner(locks.get(0));
+            } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
+                setOwnerLock(true);
             }
 
             if (isOwnerLock()) {
@@ -299,7 +296,10 @@ public class ZkReentrantReadWriteLock {
             return false;
         }
 
-            public void release(int i) throws KeeperException, InterruptedException {
+        public void release(int i) throws KeeperException, InterruptedException {
+            if (ownerLockName.contains(READ_LOCK_PREFIX)) {
+                minuReadLockCount();
+            }
             if (getReenTranLockCount() > 1) {
                 minuReenTranLock(i);
             } else {

@@ -24,7 +24,7 @@ public class ZkSynchronizer {
     ZkSynchronizer(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
         this.resourceName = resourceName;
         final CountDownLatch connectedSignal = new CountDownLatch(1);
-        zk = new ZooKeeper(zkHost,sessionTimeout,new Watcher() {
+        zk = new ZooKeeper(zkHost, sessionTimeout, new Watcher() {
             @Override
             public void process(WatchedEvent we) {
                 if (we.getState() == Event.KeeperState.SyncConnected) {
@@ -89,13 +89,68 @@ public class ZkSynchronizer {
     }
 
 
-    protected void createNodeResource() throws KeeperException, InterruptedException {
-        if (existsLockPath()) {
-            return;
+    protected void createNodeResource() {
+        try {
+            zk.create(lockPath(), "0".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        } catch (KeeperException ignored) {
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
-        zk.create(lockPath(), resourceName.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
     }
 
+
+    protected int getReadLockCount() throws KeeperException, InterruptedException {
+        byte[] lockPathContent = zk.getData(lockPath(), false, null);
+        return Integer.valueOf(new String(lockPathContent));
+    }
+
+    protected boolean startupAddReadLockCount() {
+        while (true) {
+            try {
+                Stat lockPathStat = zk.exists(lockPath(), false);
+                int readLockCount = getReadLockCount();
+                Stat updateLockPathResult = zk.setData(lockPath(), String.valueOf(readLockCount + 1).getBytes(), lockPathStat.getVersion());
+                if (updateLockPathResult.getVersion() - lockPathStat.getVersion() == 1) {
+                    return true;
+                }
+            } catch (Exception e) {
+
+            }
+        }
+    }
+
+
+    protected boolean processAddReadLockCount() throws KeeperException, InterruptedException {
+        while (true) {
+            Stat lockPathStat = zk.exists(lockPath(), false);
+            int readLockCount = getReadLockCount();
+            if (readLockCount <= 0) {
+                return false;
+            }
+            try {
+                Stat updateLockPathResult = zk.setData(lockPath(), String.valueOf(readLockCount + 1).getBytes(), lockPathStat.getVersion());
+                if (updateLockPathResult.getVersion() - lockPathStat.getVersion() == 1) {
+                    return true;
+                }
+            } catch (Exception e) {
+
+            }
+        }
+    }
+
+    protected void minuReadLockCount(){
+        while (true) {
+            try {
+                Stat lockPathStat = zk.exists(lockPath(), false);
+                int readLockCount = getReadLockCount();
+                zk.setData(lockPath(), String.valueOf(readLockCount - 1).getBytes(), lockPathStat.getVersion());
+                break;
+            } catch (Exception ignored) {
+
+            }
+        }
+    }
 
     protected String addChildren(String childrenName) throws KeeperException, InterruptedException {
         String nodePath = zk.create(nodePath(childrenName), childrenName.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
@@ -133,23 +188,20 @@ public class ZkSynchronizer {
         zk.close();
     }
 
-    protected void watchPreviousNode(String previousNodeName, long time, TimeUnit unit) {
-        final CountDownLatch watchNodeSignal = new CountDownLatch(1);
 
+    protected void watchPreviousNode(String previousNodeName, long time, TimeUnit unit) {
         try {
+            final CountDownLatch nodeDeleteSignal = new CountDownLatch(1);
             zk.getData(nodePath(previousNodeName), new Watcher() {
                 @Override
                 public void process(WatchedEvent event) {
                     if (event.getType() == Event.EventType.NodeDeleted) {
-                        setOwnerLock(true);
-                        watchNodeSignal.countDown();
+                        nodeDeleteSignal.countDown();
                     }
                 }
             }, null);
-            watchNodeSignal.await(time, unit);
-        } catch (KeeperException ignored) {
-
-        } catch (InterruptedException e) {
+            nodeDeleteSignal.await(time, unit);
+        } catch (Exception e) {
             e.printStackTrace();
         }
 
@@ -158,20 +210,19 @@ public class ZkSynchronizer {
 
 
     protected void watchPreviousNode(String previousNodeName) {
-        try {
-            final CountDownLatch connectedSignal = new CountDownLatch(1);
+        try {final CountDownLatch nodeDeleteSignal = new CountDownLatch(1);
+            if (previousNodeName.contains(READ_LOCK_PREFIX) && ownerLockName.contains(READ_LOCK_PREFIX)) {
+                return;
+            }
             zk.getData(nodePath(previousNodeName), new Watcher() {
                 @Override
                 public void process(WatchedEvent event) {
                     if (event.getType() == Event.EventType.NodeDeleted) {
-                        setOwnerLock(true);
-                        connectedSignal.countDown();
+                        nodeDeleteSignal.countDown();
                     }
                 }
             }, null);
-            connectedSignal.await();
-
-
+            nodeDeleteSignal.await();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -186,19 +237,9 @@ public class ZkSynchronizer {
         hasLock = isOwnerLock;
         if (isOwnerLock) {
             reenTranLockCount = reenTranLockCount + 1;
-        }else {
+        } else {
             reenTranLockCount = reenTranLockCount - 1;
         }
-
-
     }
 
-
-    protected void lockOwner(String nodeName) throws KeeperException, InterruptedException {
-        setOwnerLock(true);
-        Stat exists = zk.exists(nodePath(nodeName), false);
-        if (exists == null) {
-            setOwnerLock(false);
-        }
-    }
 }
