@@ -12,21 +12,29 @@ import java.util.concurrent.TimeUnit;
  */
 public class ZkReentrantReadWriteLock {
 
-    private Sync sync;
+    private AbstractSync sync;
     private ReadLock readerLock;
     private WriteLock writerLock;
 
 
     public ZkReentrantReadWriteLock(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
-        initZkLock(zkHost, sessionTimeout, resourceName);
+        initZkLock(zkHost, sessionTimeout, resourceName, false);
     }
 
     public ZkReentrantReadWriteLock(String zkHost, String resourceName) throws IOException, InterruptedException {
-        initZkLock(zkHost, 60000, resourceName);
+        initZkLock(zkHost, 60000, resourceName, false);
     }
 
-    private void initZkLock(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
-        sync = new Sync(zkHost, sessionTimeout, resourceName);
+    public ZkReentrantReadWriteLock(String zkHost, int sessionTimeout, String resourceName, boolean fair) throws IOException, InterruptedException {
+        initZkLock(zkHost, sessionTimeout, resourceName, fair);
+    }
+
+    public ZkReentrantReadWriteLock(String zkHost, String resourceName, boolean fair) throws IOException, InterruptedException {
+        initZkLock(zkHost, 60000, resourceName, fair);
+    }
+
+    private void initZkLock(String zkHost, int sessionTimeout, String resourceName, boolean fair) throws IOException, InterruptedException {
+        sync = fair ? new FairSync(zkHost, sessionTimeout, resourceName) : new NonfairSync(zkHost, sessionTimeout, resourceName);
         readerLock = new ReadLock(this);
         writerLock = new WriteLock(this);
     }
@@ -41,7 +49,7 @@ public class ZkReentrantReadWriteLock {
     }
 
     public static class ReadLock implements ZkLock {
-        private final Sync sync;
+        private final AbstractSync sync;
 
 
         public ReadLock(ZkReentrantReadWriteLock lock) {
@@ -85,7 +93,7 @@ public class ZkReentrantReadWriteLock {
 
     public static class WriteLock implements ZkLock {
 
-        private final Sync sync;
+        private final AbstractSync sync;
 
         WriteLock(ZkReentrantReadWriteLock lock) {
             sync = lock.sync;
@@ -125,19 +133,212 @@ public class ZkReentrantReadWriteLock {
     }
 
 
-    public static class Sync extends ZkSynchronizer {
+    /**
+     * Nonfair version of Sync
+     */
+    static final class NonfairSync extends AbstractSync {
+        NonfairSync(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
+            super(zkHost, sessionTimeout, resourceName);
+        }
+
+        @Override
+        public void readLock(int i) throws KeeperException, InterruptedException {
+            if (isOwnerLock()) {
+                addReenTranLock(i);
+                return;
+            }
+            if (!existsLockPath()) {
+                createNodeResource();
+            }
+            ownerLockName = addChildren(readerNodePrefix());
+            while (!isOwnerLock()) {
+                List<String> locks = getChildrenList();
+                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
+                    setOwnerLock(true);
+                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
+                    setOwnerLock(true);
+                }
+                if (isOwnerLock()) {
+                    break;
+                }
+                int previousWatchNodeIndex = nonFairReaderPreviousWatchNodeIndex(locks);
+                if (previousWatchNodeIndex == -1) {
+                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                }
+                watchPreviousNode(locks.get(previousWatchNodeIndex));
+            }
+        }
+
+
+        @Override
+        public boolean tryReadLock(int i, long time, TimeUnit unit) throws KeeperException, InterruptedException {
+            if (isOwnerLock()) {
+                addReenTranLock(i);
+                return true;
+            }
+            if (!existsLockPath()) {
+                createNodeResource();
+            }
+            ownerLockName = addChildren(readerNodePrefix());
+            long nanosTimeout = unit.toNanos(time);
+            final long deadline = System.nanoTime() + nanosTimeout;
+            while (!isOwnerLock() && nanosTimeout > 0L) {
+                List<String> locks = getChildrenList();
+                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
+                    setOwnerLock(true);
+                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
+                    setOwnerLock(true);
+                }
+                if (isOwnerLock()) {
+                    return true;
+                }
+                int previousWatchNodeIndex = nonFairReaderPreviousWatchNodeIndex(locks);
+                if (previousWatchNodeIndex == -1) {
+                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                }
+                watchPreviousNode(locks.get(previousWatchNodeIndex), time, unit);
+                nanosTimeout = deadline - System.nanoTime();
+            }
+            return isOwnerLock();
+        }
+
+
+        @Override
+        public boolean tryReadLock() throws KeeperException, InterruptedException {
+            if (isOwnerLock()) {
+                addReenTranLock(1);
+                return true;
+            }
+            if (!existsLockPath()) {
+                createNodeResource();
+            }
+            ownerLockName = addChildren(readerNodePrefix());
+            List<String> locks = getChildrenList();
+            if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
+                setOwnerLock(true);
+            } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
+                setOwnerLock(true);
+            }
+
+            if (isOwnerLock()) {
+                return true;
+            }
+            return false;
+        }
+
+
+    }
+
+
+    /**
+     * Fair version of Sync
+     */
+    static final class FairSync extends AbstractSync {
+        FairSync(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
+            super(zkHost, sessionTimeout, resourceName);
+        }
+
+
+        @Override
+        public void readLock(int i) throws KeeperException, InterruptedException {
+            if (isOwnerLock()) {
+                addReenTranLock(i);
+                return;
+            }
+            if (!existsLockPath()) {
+                createNodeResource();
+            }
+            ownerLockName = addChildren(readerNodePrefix());
+            while (!isOwnerLock()) {
+                List<String> locks = getChildrenList();
+                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
+                    setOwnerLock(true);
+                } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && processAddReadLockCount()) {
+                    setOwnerLock(true);
+                }
+                if (isOwnerLock()) {
+                    break;
+                }
+                int previousWatchNodeIndex = fairReaderPreviousWatchNodeIndex(locks);
+                if (previousWatchNodeIndex == -1) {
+                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                }
+                watchPreviousNode(locks.get(previousWatchNodeIndex));
+            }
+        }
+
+
+        @Override
+        public boolean tryReadLock(int i, long time, TimeUnit unit) throws KeeperException, InterruptedException {
+            if (isOwnerLock()) {
+                addReenTranLock(i);
+                return true;
+            }
+            if (!existsLockPath()) {
+                createNodeResource();
+            }
+            ownerLockName = addChildren(readerNodePrefix());
+            long nanosTimeout = unit.toNanos(time);
+            final long deadline = System.nanoTime() + nanosTimeout;
+            while (!isOwnerLock() && nanosTimeout > 0L) {
+                List<String> locks = getChildrenList();
+                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
+                    setOwnerLock(true);
+                } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && processAddReadLockCount()) {
+                    setOwnerLock(true);
+                }
+                if (isOwnerLock()) {
+                    return true;
+                }
+                int previousWatchNodeIndex = fairReaderPreviousWatchNodeIndex(locks);
+                if (previousWatchNodeIndex == -1) {
+                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                }
+                watchPreviousNode(locks.get(previousWatchNodeIndex), time, unit);
+                nanosTimeout = deadline - System.nanoTime();
+            }
+            return isOwnerLock();
+        }
+
+
+        @Override
+        public boolean tryReadLock() throws KeeperException, InterruptedException {
+            if (isOwnerLock()) {
+                addReenTranLock(1);
+                return true;
+            }
+            if (!existsLockPath()) {
+                createNodeResource();
+            }
+            ownerLockName = addChildren(readerNodePrefix());
+            List<String> locks = getChildrenList();
+            if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
+                setOwnerLock(true);
+            } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && processAddReadLockCount()) {
+                setOwnerLock(true);
+            }
+
+            if (isOwnerLock()) {
+                return true;
+            }
+            return false;
+        }
+
+    }
+
+    abstract static class AbstractSync extends AbstractZkSynchronizer {
 
         private final String identifyId;
 
-        private String readerNodePrefix() {
+        protected String readerNodePrefix() {
             return READ_LOCK_PREFIX + identifyId + "_";
         }
 
-        private String writerNodePrefix() {
+        protected String writerNodePrefix() {
             return WRITE_LOCK_PREFIX + identifyId + "_";
         }
 
-        Sync(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
+        AbstractSync(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
             super(zkHost, sessionTimeout, resourceName);
             identifyId = UUID.randomUUID().toString().replaceAll("-", "");
         }
@@ -168,6 +369,7 @@ public class ZkReentrantReadWriteLock {
         }
 
 
+
         public boolean tryWriteLock(int i, long time, TimeUnit unit) throws KeeperException, InterruptedException {
             if (isOwnerLock()) {
                 addReenTranLock(i);
@@ -196,6 +398,7 @@ public class ZkReentrantReadWriteLock {
         }
 
 
+
         public boolean tryWriteLock() throws KeeperException, InterruptedException {
 
             if (isOwnerLock()) {
@@ -214,87 +417,14 @@ public class ZkReentrantReadWriteLock {
             return false;
         }
 
-        public void readLock(int i) throws KeeperException, InterruptedException {
-            if (isOwnerLock()) {
-                addReenTranLock(i);
-                return;
-            }
-            if (!existsLockPath()) {
-                createNodeResource();
-            }
-            ownerLockName = addChildren(readerNodePrefix());
-            while (!isOwnerLock()) {
-                List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                    setOwnerLock(true);
-                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
-                    setOwnerLock(true);
-                }
-                if (isOwnerLock()) {
-                    break;
-                }
-                int previousWatchNodeIndex = readerPreviousWatchNodeIndex(locks);
-                if (previousWatchNodeIndex == -1) {
-                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
-                }
-                watchPreviousNode(locks.get(previousWatchNodeIndex));
-            }
-        }
+        public abstract void readLock(int i) throws KeeperException, InterruptedException;
 
 
-        public boolean tryReadLock(int i, long time, TimeUnit unit) throws KeeperException, InterruptedException {
-            if (isOwnerLock()) {
-                addReenTranLock(i);
-                return true;
-            }
-            if (!existsLockPath()) {
-                createNodeResource();
-            }
-            ownerLockName = addChildren(readerNodePrefix());
-            long nanosTimeout = unit.toNanos(time);
-            final long deadline = System.nanoTime() + nanosTimeout;
-            while (!isOwnerLock() && nanosTimeout > 0L) {
-                List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                    setOwnerLock(true);
-                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
-                    setOwnerLock(true);
-                }
-                if (isOwnerLock()) {
-                    return true;
-                }
-                int previousWatchNodeIndex = readerPreviousWatchNodeIndex(locks);
-                if (previousWatchNodeIndex == -1) {
-                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
-                }
-                watchPreviousNode(locks.get(previousWatchNodeIndex), time, unit);
-                nanosTimeout = deadline - System.nanoTime();
-            }
-            return isOwnerLock();
-        }
+        public abstract boolean tryReadLock(int i, long time, TimeUnit unit) throws KeeperException, InterruptedException;
 
 
-        public boolean tryReadLock() throws KeeperException, InterruptedException {
-            if (isOwnerLock()) {
-                addReenTranLock(1);
-                return true;
-            }
-            if (!existsLockPath()) {
-                createNodeResource();
-            }
-            ownerLockName = addChildren(readerNodePrefix());
-            List<String> locks = getChildrenList();
-            if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                setOwnerLock(true);
-            } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
-                setOwnerLock(true);
-            }
+        public abstract boolean tryReadLock() throws KeeperException, InterruptedException;
 
-            if (isOwnerLock()) {
-                return true;
-            }
-            return false;
-        }
 
         public void release(int i) throws KeeperException, InterruptedException {
             if (ownerLockName.contains(READ_LOCK_PREFIX)) {

@@ -3,15 +3,21 @@ import org.apache.zookeeper.KeeperException;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Create by mirror on 2020/10/24
  */
 public class Test {
 
+
+    public static void main(String[] args) {
+        ReentrantReadWriteLock.ReadLock readLock = new ReentrantReadWriteLock(true).readLock();
+    }
+
     @org.junit.Test
     public void testTryReadLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_read", true).readerLock();
         if (readLock.tryLock()) {
             System.out.println("一段逻辑");
             Thread.sleep(20000);
@@ -21,7 +27,7 @@ public class Test {
 
     @org.junit.Test
     public void testReadLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_read_write").readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").readerLock();
         readLock.lock();
         System.out.println("一段逻辑");
         Thread.sleep(20000);
@@ -30,7 +36,7 @@ public class Test {
 
     @org.junit.Test
     public void testWriteTryLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_write").writeLock();
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").writeLock();
         if (writeLock.tryLock()) {
             System.out.println("一段逻辑");
             Thread.sleep(20000);
@@ -40,7 +46,7 @@ public class Test {
 
     @org.junit.Test
     public void testWriteLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_read_write").writeLock();
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").writeLock();
         writeLock.lock();
         System.out.println("一段逻辑");
         Thread.sleep(20000);
@@ -84,7 +90,6 @@ public class Test {
         Thread.sleep(5000);
         readLock.unlock();
         System.out.println("释放第一把锁");
-
 
 
     }

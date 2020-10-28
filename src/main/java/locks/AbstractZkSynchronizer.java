@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * @author mirror
  */
-public class ZkSynchronizer {
+public abstract class AbstractZkSynchronizer {
     private final ZooKeeper zk;
     private final String resourceName;
     private boolean hasLock = false;
@@ -21,7 +21,7 @@ public class ZkSynchronizer {
     protected static String READ_LOCK_PREFIX = "r_";
     protected static String WRITE_LOCK_PREFIX = "w_";
 
-    ZkSynchronizer(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
+    AbstractZkSynchronizer(String zkHost, int sessionTimeout, String resourceName) throws IOException, InterruptedException {
         this.resourceName = resourceName;
         final CountDownLatch connectedSignal = new CountDownLatch(1);
         zk = new ZooKeeper(zkHost, sessionTimeout, new Watcher() {
@@ -35,10 +35,26 @@ public class ZkSynchronizer {
         connectedSignal.await();
     }
 
-    protected int readerPreviousWatchNodeIndex(List<String> locks) {
+    protected int nonFairReaderPreviousWatchNodeIndex(List<String> locks) {
         for (int lockIndex = 0; lockIndex < locks.size(); lockIndex++) {
             if (locks.get(lockIndex).contains(READ_LOCK_PREFIX)) {
                 return lockIndex - 1;
+            }
+        }
+        return -1;
+    }
+
+    protected int fairReaderPreviousWatchNodeIndex(List<String> locks) {
+        int ownerLockIndex = -1;
+        for (int lockIndex = locks.size() - 1; lockIndex >= 0; lockIndex--) {
+            if (locks.get(lockIndex).equals(ownerLockName)) {
+                ownerLockIndex = lockIndex;
+            }
+        }
+
+        for (int lockIndex = ownerLockIndex; lockIndex >= 0; lockIndex--) {
+            if (locks.get(lockIndex).contains(READ_LOCK_PREFIX)) {
+                return lockIndex;
             }
         }
         return -1;
@@ -99,6 +115,21 @@ public class ZkSynchronizer {
         }
     }
 
+    protected boolean betweenHead2ownerLockHasWriterLock(List<String> locks) {
+        int ownerLockIndex = -1;
+        for (int lockIndex = locks.size() - 1; lockIndex >= 0; lockIndex--) {
+            if (locks.get(lockIndex).equals(ownerLockName)) {
+                ownerLockIndex = lockIndex;
+            }
+        }
+
+        for (int lockIndex = ownerLockIndex; lockIndex > 0; lockIndex--) {
+            if (locks.get(lockIndex).contains(WRITE_LOCK_PREFIX)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     protected int getReadLockCount() throws KeeperException, InterruptedException {
         byte[] lockPathContent = zk.getData(lockPath(), false, null);
@@ -139,13 +170,16 @@ public class ZkSynchronizer {
         }
     }
 
-    protected void minuReadLockCount(){
+    protected void minuReadLockCount() {
         while (true) {
             try {
                 Stat lockPathStat = zk.exists(lockPath(), false);
                 int readLockCount = getReadLockCount();
-                zk.setData(lockPath(), String.valueOf(readLockCount - 1).getBytes(), lockPathStat.getVersion());
-                break;
+                System.out.println(readLockCount);
+                Stat stat = zk.setData(lockPath(), String.valueOf(readLockCount - 1).getBytes(), lockPathStat.getVersion());
+                if (stat.getVersion() - lockPathStat.getVersion() == 1) {
+                    break;
+                }
             } catch (Exception ignored) {
 
             }
@@ -210,7 +244,8 @@ public class ZkSynchronizer {
 
 
     protected void watchPreviousNode(String previousNodeName) {
-        try {final CountDownLatch nodeDeleteSignal = new CountDownLatch(1);
+        try {
+            final CountDownLatch nodeDeleteSignal = new CountDownLatch(1);
             if (previousNodeName.contains(READ_LOCK_PREFIX) && ownerLockName.contains(READ_LOCK_PREFIX)) {
                 return;
             }
