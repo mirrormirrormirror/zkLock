@@ -153,11 +153,7 @@ public class ZkReentrantReadWriteLock {
             ownerLockName = addChildren(readerNodePrefix());
             while (!isOwnerLock()) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                    setOwnerLock(true);
-                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
-                    setOwnerLock(true);
-                }
+                attemptNonFairLock(locks);
                 if (isOwnerLock()) {
                     break;
                 }
@@ -184,11 +180,7 @@ public class ZkReentrantReadWriteLock {
             final long deadline = System.nanoTime() + nanosTimeout;
             while (!isOwnerLock() && nanosTimeout > 0L) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                    setOwnerLock(true);
-                } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
-                    setOwnerLock(true);
-                }
+                attemptNonFairLock(locks);
                 if (isOwnerLock()) {
                     return true;
                 }
@@ -200,6 +192,15 @@ public class ZkReentrantReadWriteLock {
                 nanosTimeout = deadline - System.nanoTime();
             }
             return isOwnerLock();
+        }
+
+        private void attemptNonFairLock(List<String> locks) throws KeeperException, InterruptedException {
+            if (locks.get(0).equals(ownerLockName)) {
+                startupAddReadLockCount();
+                setOwnerLock(true);
+            } else if (getReadLockCount() > 0 && waitProcessAddReadLockCount()) {
+                setOwnerLock(true);
+            }
         }
 
 
@@ -214,19 +215,13 @@ public class ZkReentrantReadWriteLock {
             }
             ownerLockName = addChildren(readerNodePrefix());
             List<String> locks = getChildrenList();
-            if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                setOwnerLock(true);
-            } else if (getReadLockCount() > 0 && processAddReadLockCount()) {
-                setOwnerLock(true);
-            }
+            attemptNonFairLock(locks);
 
             if (isOwnerLock()) {
                 return true;
             }
             return false;
         }
-
-
     }
 
 
@@ -251,11 +246,7 @@ public class ZkReentrantReadWriteLock {
             ownerLockName = addChildren(readerNodePrefix());
             while (!isOwnerLock()) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                    setOwnerLock(true);
-                } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && processAddReadLockCount()) {
-                    setOwnerLock(true);
-                }
+                attemptFairLock(locks);
                 if (isOwnerLock()) {
                     break;
                 }
@@ -264,6 +255,15 @@ public class ZkReentrantReadWriteLock {
                     throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
                 }
                 watchPreviousNode(locks.get(previousWatchNodeIndex));
+            }
+        }
+
+        private void attemptFairLock(List<String> locks) throws KeeperException, InterruptedException {
+            if (locks.get(0).equals(ownerLockName)) {
+                startupAddReadLockCount();
+                setOwnerLock(true);
+            } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && waitProcessAddReadLockCount()) {
+                setOwnerLock(true);
             }
         }
 
@@ -282,11 +282,7 @@ public class ZkReentrantReadWriteLock {
             final long deadline = System.nanoTime() + nanosTimeout;
             while (!isOwnerLock() && nanosTimeout > 0L) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                    setOwnerLock(true);
-                } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && processAddReadLockCount()) {
-                    setOwnerLock(true);
-                }
+                attemptFairLock(locks);
                 if (isOwnerLock()) {
                     return true;
                 }
@@ -312,12 +308,7 @@ public class ZkReentrantReadWriteLock {
             }
             ownerLockName = addChildren(readerNodePrefix());
             List<String> locks = getChildrenList();
-            if (locks.get(0).equals(ownerLockName) && startupAddReadLockCount()) {
-                setOwnerLock(true);
-            } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && processAddReadLockCount()) {
-                setOwnerLock(true);
-            }
-
+            attemptFairLock(locks);
             if (isOwnerLock()) {
                 return true;
             }
@@ -353,12 +344,15 @@ public class ZkReentrantReadWriteLock {
                 createNodeResource();
             }
             ownerLockName = addChildren(writerNodePrefix());
-
             while (!isOwnerLock()) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && getReadLockCount() == 0) {
-                    setOwnerLock(true);
-                    break;
+                if (locks.get(0).equals(ownerLockName)) {
+                    if (getReadLockCount() == 0) {
+                        setOwnerLock(true);
+                        break;
+                    }
+                    watchReadCount();
+                    continue;
                 }
                 int previousWatchNodeIndex = writerPreviousWatchNodeIndex(locks, ownerLockName);
                 if (previousWatchNodeIndex == -1) {
@@ -367,7 +361,6 @@ public class ZkReentrantReadWriteLock {
                 watchPreviousNode(locks.get(previousWatchNodeIndex));
             }
         }
-
 
 
         public boolean tryWriteLock(int i, long time, TimeUnit unit) throws KeeperException, InterruptedException {
@@ -383,9 +376,13 @@ public class ZkReentrantReadWriteLock {
             final long deadline = System.nanoTime() + nanosTimeout;
             while (!isOwnerLock() && nanosTimeout > 0L) {
                 List<String> locks = getChildrenList();
-                if (locks.get(0).equals(ownerLockName) && getReadLockCount() == 0) {
-                    setOwnerLock(true);
-                    return true;
+                if (locks.get(0).equals(ownerLockName)) {
+                    if (getReadLockCount() == 0) {
+                        setOwnerLock(true);
+                        break;
+                    }
+                    watchReadCount(i, unit);
+                    continue;
                 }
                 int previousWatchNodeIndex = writerPreviousWatchNodeIndex(locks, ownerLockName);
                 if (previousWatchNodeIndex == -1) {
@@ -396,7 +393,6 @@ public class ZkReentrantReadWriteLock {
             }
             return isOwnerLock();
         }
-
 
 
         public boolean tryWriteLock() throws KeeperException, InterruptedException {

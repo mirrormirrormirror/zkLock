@@ -136,14 +136,14 @@ public abstract class AbstractZkSynchronizer {
         return Integer.valueOf(new String(lockPathContent));
     }
 
-    protected boolean startupAddReadLockCount() {
+    protected void startupAddReadLockCount() {
         while (true) {
             try {
                 Stat lockPathStat = zk.exists(lockPath(), false);
                 int readLockCount = getReadLockCount();
                 Stat updateLockPathResult = zk.setData(lockPath(), String.valueOf(readLockCount + 1).getBytes(), lockPathStat.getVersion());
                 if (updateLockPathResult.getVersion() - lockPathStat.getVersion() == 1) {
-                    return true;
+                    break;
                 }
             } catch (Exception e) {
 
@@ -152,7 +152,7 @@ public abstract class AbstractZkSynchronizer {
     }
 
 
-    protected boolean processAddReadLockCount() throws KeeperException, InterruptedException {
+    protected boolean waitProcessAddReadLockCount() throws KeeperException, InterruptedException {
         while (true) {
             Stat lockPathStat = zk.exists(lockPath(), false);
             int readLockCount = getReadLockCount();
@@ -242,6 +242,39 @@ public abstract class AbstractZkSynchronizer {
 
     }
 
+
+    protected void watchReadCount(long time, TimeUnit unit) throws KeeperException, InterruptedException {
+        final CountDownLatch readCountDataChangeSignal = new CountDownLatch(1);
+        byte[] readCountData = zk.getData(lockPath(), new Watcher() {
+            @Override
+            public void process(WatchedEvent event) {
+                if (event.getType() == Event.EventType.NodeDataChanged) {
+                    readCountDataChangeSignal.countDown();
+                }
+            }
+        }, null);
+        Integer readCount = Integer.valueOf(new String(readCountData));
+        if (readCount > 0) {
+            readCountDataChangeSignal.await(time, unit);
+        }
+    }
+
+
+    protected void watchReadCount() throws KeeperException, InterruptedException {
+        final CountDownLatch readCountDataChangeSignal = new CountDownLatch(1);
+        byte[] readCountData = zk.getData(lockPath(), new Watcher() {
+            @Override
+            public void process(WatchedEvent event) {
+                if (event.getType() == Event.EventType.NodeDataChanged) {
+                    readCountDataChangeSignal.countDown();
+                }
+            }
+        }, null);
+        Integer readCount = Integer.valueOf(new String(readCountData));
+        if (readCount > 0) {
+            readCountDataChangeSignal.wait();
+        }
+    }
 
     protected void watchPreviousNode(String previousNodeName) {
         try {
