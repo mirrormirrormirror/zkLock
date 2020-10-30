@@ -16,7 +16,7 @@
 <dependency>
 	    <groupId>com.github.mirrormirrormirror</groupId>
 	    <artifactId>zkLock</artifactId>
-	    <version>Tag</version>
+	    <version>v1.0</version>
 </dependency>
 ```
 ### 例子
