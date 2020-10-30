@@ -18,7 +18,7 @@
 </dependency>
 ```
 ### 例子
-#### 读锁
+#### 公平读锁
 ``` java
         ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, true).readerLock();
         readLock.lock();
@@ -26,12 +26,46 @@
         Thread.sleep(20000);
         readLock.unlock();
 ```
-
-#### 写锁
+#### 非公平读锁（阻塞）
+``` java
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, false).readerLock();
+        readLock.lock();
+        System.out.println("一段逻辑");
+        Thread.sleep(20000);
+        readLock.unlock();
+```
+#### 非公平读锁（非阻塞）
+``` java
+	ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "lock_test", false).readerLock();
+        if (readLock.tryLock()) {
+            System.out.println("一段逻辑");
+            Thread.sleep(10000);
+            readLock.unlock();
+        }
+``` 
+#### 公平写锁
 ``` java
         ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "lock_test", true).writeLock();
         writeLock.lock();
         System.out.println("一段逻辑");
         Thread.sleep(10000);
         writeLock.unlock();
+```
+
+#### 非公平写锁
+``` java
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "lock_test", false).writeLock();
+        writeLock.lock();
+        System.out.println("一段逻辑");
+        Thread.sleep(10000);
+        writeLock.unlock();
+```
+#### 非公平写锁
+``` java
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "lock_test", false).writeLock();
+        if (writeLock.tryLock()) {
+            System.out.println("一段逻辑");
+            Thread.sleep(10000);
+            writeLock.unlock();
+        }
 ```
