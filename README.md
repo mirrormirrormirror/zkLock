@@ -52,7 +52,7 @@
         writeLock.unlock();
 ```
 
-#### 非公平写锁
+#### 非公平写锁（阻塞）
 ``` java
         ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "lock_test", false).writeLock();
         writeLock.lock();
@@ -60,7 +60,7 @@
         Thread.sleep(10000);
         writeLock.unlock();
 ```
-#### 非公平写锁
+#### 非公平写锁（非阻塞）
 ``` java
         ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "lock_test", false).writeLock();
         if (writeLock.tryLock()) {
