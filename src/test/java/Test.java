@@ -11,23 +11,25 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class Test {
 
 
+    private static String LOCK_TEST = "lock_test";
+
     public static void main(String[] args) {
         ReentrantReadWriteLock.ReadLock readLock = new ReentrantReadWriteLock(true).readLock();
     }
 
     @org.junit.Test
     public void testTryReadLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_read", true).readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, true).readerLock();
         if (readLock.tryLock()) {
             System.out.println("一段逻辑");
-            Thread.sleep(20000);
+            Thread.sleep(10000);
             readLock.unlock();
         }
     }
 
     @org.junit.Test
     public void testReadLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, true).readerLock();
         readLock.lock();
         System.out.println("一段逻辑");
         Thread.sleep(20000);
@@ -36,27 +38,27 @@ public class Test {
 
     @org.junit.Test
     public void testWriteTryLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").writeLock();
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST).writeLock();
         if (writeLock.tryLock()) {
             System.out.println("一段逻辑");
-            Thread.sleep(20000);
+            Thread.sleep(10000);
             writeLock.unlock();
         }
     }
 
     @org.junit.Test
     public void testWriteLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_read").writeLock();
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, true).writeLock();
         writeLock.lock();
         System.out.println("一段逻辑");
-        Thread.sleep(20000);
+        Thread.sleep(10000);
         writeLock.unlock();
     }
 
 
     @org.junit.Test
     public void testWriteTryTimeoutLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", "mirror_try_timeout").writeLock();
+        ZkReentrantReadWriteLock.WriteLock writeLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST).writeLock();
         if (writeLock.tryLock(3, TimeUnit.SECONDS)) {
             System.out.println("一段逻辑");
             Thread.sleep(10000);
@@ -66,7 +68,7 @@ public class Test {
 
     @org.junit.Test
     public void testReadTryTimeoutLock() throws KeeperException, InterruptedException, IOException {
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_try_timeout").readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST).readerLock();
         if (readLock.tryLock(15, TimeUnit.SECONDS)) {
             System.out.println("一段逻辑");
             Thread.sleep(10000);
@@ -78,7 +80,6 @@ public class Test {
     @org.junit.Test
     public void testReadReentranLock() throws KeeperException, InterruptedException, IOException {
         ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "mirror_try_timeout").readerLock();
-
         readLock.lock();
         System.out.println("第一段逻辑---");
         Thread.sleep(5000);
@@ -90,9 +91,6 @@ public class Test {
         Thread.sleep(5000);
         readLock.unlock();
         System.out.println("释放第一把锁");
-
-
     }
-
 
 }

@@ -157,9 +157,9 @@ public class ZkReentrantReadWriteLock {
                 if (isOwnerLock()) {
                     break;
                 }
-                int previousWatchNodeIndex = nonFairReaderPreviousWatchNodeIndex(locks);
+                int previousWatchNodeIndex = readerPreviousWatchNodeIndex(locks);
                 if (previousWatchNodeIndex == -1) {
-                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                    continue;
                 }
                 watchPreviousNode(locks.get(previousWatchNodeIndex));
             }
@@ -184,9 +184,9 @@ public class ZkReentrantReadWriteLock {
                 if (isOwnerLock()) {
                     return true;
                 }
-                int previousWatchNodeIndex = nonFairReaderPreviousWatchNodeIndex(locks);
+                int previousWatchNodeIndex = readerPreviousWatchNodeIndex(locks);
                 if (previousWatchNodeIndex == -1) {
-                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                    continue;
                 }
                 watchPreviousNode(locks.get(previousWatchNodeIndex), time, unit);
                 nanosTimeout = deadline - System.nanoTime();
@@ -198,7 +198,7 @@ public class ZkReentrantReadWriteLock {
             if (locks.get(0).equals(ownerLockName)) {
                 startupAddReadLockCount();
                 setOwnerLock(true);
-            } else if (getReadLockCount() > 0 && waitProcessAddReadLockCount()) {
+            } else if (getReadLockCount() > 0 && attemptAddReadLockCount()) {
                 setOwnerLock(true);
             }
         }
@@ -250,9 +250,9 @@ public class ZkReentrantReadWriteLock {
                 if (isOwnerLock()) {
                     break;
                 }
-                int previousWatchNodeIndex = fairReaderPreviousWatchNodeIndex(locks);
+                int previousWatchNodeIndex = readerPreviousWatchNodeIndex(locks);
                 if (previousWatchNodeIndex == -1) {
-                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                    continue;
                 }
                 watchPreviousNode(locks.get(previousWatchNodeIndex));
             }
@@ -262,7 +262,7 @@ public class ZkReentrantReadWriteLock {
             if (locks.get(0).equals(ownerLockName)) {
                 startupAddReadLockCount();
                 setOwnerLock(true);
-            } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && waitProcessAddReadLockCount()) {
+            } else if (getReadLockCount() > 0 && !betweenHead2ownerLockHasWriterLock(locks) && attemptAddReadLockCount()) {
                 setOwnerLock(true);
             }
         }
@@ -286,9 +286,9 @@ public class ZkReentrantReadWriteLock {
                 if (isOwnerLock()) {
                     return true;
                 }
-                int previousWatchNodeIndex = fairReaderPreviousWatchNodeIndex(locks);
+                int previousWatchNodeIndex = readerPreviousWatchNodeIndex(locks);
                 if (previousWatchNodeIndex == -1) {
-                    throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
+                    continue;
                 }
                 watchPreviousNode(locks.get(previousWatchNodeIndex), time, unit);
                 nanosTimeout = deadline - System.nanoTime();
@@ -354,7 +354,7 @@ public class ZkReentrantReadWriteLock {
                     watchReadCount();
                     continue;
                 }
-                int previousWatchNodeIndex = writerPreviousWatchNodeIndex(locks, ownerLockName);
+                int previousWatchNodeIndex = writerPreviousWatchNodeIndex(locks);
                 if (previousWatchNodeIndex == -1) {
                     throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
                 }
@@ -384,7 +384,7 @@ public class ZkReentrantReadWriteLock {
                     watchReadCount(i, unit);
                     continue;
                 }
-                int previousWatchNodeIndex = writerPreviousWatchNodeIndex(locks, ownerLockName);
+                int previousWatchNodeIndex = writerPreviousWatchNodeIndex(locks);
                 if (previousWatchNodeIndex == -1) {
                     throw KeeperException.create(KeeperException.Code.SYSTEMERROR);
                 }
