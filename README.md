@@ -1,6 +1,8 @@
 # zkLock
 利用zookeeper实现分布式锁，支持读写锁，可重入
 
+### 博客地址：https://www.jianshu.com/p/cee3c8092aa5
+
 ### 使用方式 -- 相关依赖
 ``` pom
 <repositories>
@@ -20,7 +22,7 @@
 ### 例子
 #### 公平读锁
 ``` java
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, true).readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "lock_test", true).readerLock();
         readLock.lock();
         System.out.println("一段逻辑");
         Thread.sleep(20000);
@@ -28,7 +30,7 @@
 ```
 #### 非公平读锁（阻塞）
 ``` java
-        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", LOCK_TEST, false).readerLock();
+        ZkReentrantReadWriteLock.ReadLock readLock = new ZkReentrantReadWriteLock("localhost", "lock_test", false).readerLock();
         readLock.lock();
         System.out.println("一段逻辑");
         Thread.sleep(20000);
